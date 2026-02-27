@@ -36,4 +36,75 @@ Mutex - syncronization primitive used in multithreaded programs to ensure only o
 
 ## 3.2.1 Using mutexes in C++
 
+Example shown in `protect-list.cpp`
+
+Ensure that your member functions don't return a pointer or reference to the protected data, since it can be modified even if the mutex is currently locked since you have direct access to the variable.
+
+## 3.2.2 Structuring code for protecting shared data
+
+Make sure functions dont return pointers/references of the data to other functions you cannot control.
+
+Listing 3.2 shows how you can pass in a function that contains a reference to the protected data and obtain it outside of the mutex lock
+
+## 3.2.3 Spotting race conditions intherent in interfaces
+
+In the example of the doubly-linked list, protecting access of each node is still dangerous and you should resort to protecting the whole list.
+
+In terms of a stack, in single-threaded code, using `empty()` to check if a stack is empty before you check the `top()` is fine.
+
+However, inbetween the `empty()` and `top()` call, if a stack decides to `pop()` the last element, we run into a race condition. 
+
+This isn't an issue with the mutex, but instead the interface of the data structure.
+
+`empty()/top()` problem is checking that the stack isn't empty (one val left) and another thread pops it before you call top, leading to undefined behavior
+
+Other scenario is
+
+```
+Stack = [A]
+
+Step 1 :Thread 1 calls top() → sees A
+
+Step 2: Thread 2 calls top() → also sees A
+
+Step 3: Thread 1 calls pop() → removes A
+
+Step 4: Thread 2 calls pop() → removes next item (or crashes if empty)
+```
+
+One solution is combining the calls to `top()` and `pop()` but leads to an issue if the copy constructor for the objects on the stack throw an exception.
+
+For example imagine `stack<vector<int>>`, you need to allocate memory on the heap to copy a vector and if this allocation fails, you get a `bad-alloc` exception.
+
+If a pop was called and you remove it from the stack but the constructor didn't copy it, you lose the value.
+
+How do we safely remoce and return a value from a thread-safe stack without causing race conditions or exception problems?
+
+Avoid returning data in a way that can return an exception + avoid loss of data
+
+Option 1: Pass in a reference: 
+
+```cpp
+// pop puts the popped value in result
+std::vector<int> result;
+some_stack.pop(result);
+```
+
+Disadvantage is that it needs to construct an instance of the stack type which can be expensive or impossible if the type needs params.
+
+Option 2: Require a no-throw copy contructor or move contructor
+
+Only allow types where returnign by value can't throw but this is very restrictive adn many types don't guarantee a no-throw copy.
+
+Option 3: Return a pointer to the popped item
+
+Advantage is that pointers can be freely copied without throwing an exception
+
+Disadvantage is returning a pointer requires a means of memory management and for simple types like ints, it can exceed the cost of just returning by value.
+
+`std::shared_ptr` is useful in this situation
+
+Option 4: Provide both option 1 + (option 2 or option 3)
+
+Continue on page 68
 
