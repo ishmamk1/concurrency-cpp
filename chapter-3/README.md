@@ -106,5 +106,10 @@ Disadvantage is returning a pointer requires a means of memory management and fo
 
 Option 4: Provide both option 1 + (option 2 or option 3)
 
-Continue on page 68
+Listing 3.5 contains a threadsafe_stack
+
+Problem with mutex is that if a singular mutex controls too many aspects, it can lock two threads accessing two separate pieces of data.
+
+## 3.2.4 Deadlock: the problem and a solution
+
 
