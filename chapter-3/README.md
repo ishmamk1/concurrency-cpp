@@ -112,4 +112,145 @@ Problem with mutex is that if a singular mutex controls too many aspects, it can
 
 ## 3.2.4 Deadlock: the problem and a solution
 
+Deadlock - when two or more processes are permanently blocked because one is waiting for a resource held by another.
 
+One solution is to lock in the same order, so always lock mutex A before mutex B, but this can still raise a deadlock
+
+Assume you have two mutexes used to lock components exchanging data, if you have a function `func(mutex A, mutex B)` which locks the mutex that appears in the parameter first, if you call this and between mutex A being locked another call for the opposite `func(mutex B, mutex A)` locks B before the first can, then you have a deadlock.
+
+C++ has `std::lock` which can lock two or more mutexes at once without risk of deadlock.
+It provides all or nothing locking and it can't help if locks are acquired separately, it is up to the developer to avoid deadlock.
+
+## 3.2.5 Further guidelines for avoiding deadlock
+
+You can cause deadlocks by calling `.join()` for other threads as they all wait for the other to complete.
+
+Avoid nested locks - Don't acquire a lock if you hold one. Deadlocks cans till occur through other means like threads waiting on each other but it removes mutex locks
+
+Avoid calling user-supplied code while holding a lock - if the user supplied code has a lock, then you end up having nested locks and can get a deadlock
+
+Acquire locks in a fixed order - If you need to acquire two or more locks and they cant be simutaneously, then acquire them in the same order for each thread. 
+
+One example is the linked list example where we hold a lock to one node and only release when we acquired the lock to the next node.
+
+Use a lock hierarchy - divide application into layers and identify all the mutexes that can be locked in a layer. 
+
+10000  ← high level
+ 5000
+  100  ← low level
+
+you can go 10000 → 5000 → 100 but not 100 → 10000 
+
+Deadlocks can occur with any syncronization construct that can lead to a wait cycle. 
+
+Bad idea to wait for a thread while holding a lock as that thread might need to acquire the lock to continue.
+
+## 3.2.6 Flexible locking with `std::unique_lock`
+
+`std::unique_lock` is a more flexible version of `std::lock_guard`, as it has the same RAII functionality but it allows you to manually lock and unlock the mutex as well.
+
+It contains a flag to determine if it is locked/unlocked which makes it perform slighly slower than `std::lock_guard`
+
+It also allows for the use of `defer_lock` which leaves the mutexes unlocked during construction, incase you instantiate several unique locks but want to lock them simutaneously.
+
+## 3.2.7 Transferring mutex ownership between scopes
+
+Mutex ownership can be changed with `std::move` and this transfer is automatic if the source is an r-value but needs to be called if it is an l-value.
+
+`std::unique_lock` is movable but not copyable.
+
+## 3.2.8 Locking at an appropriate granularity
+
+Lock a mutex only while actually accesing the data and do processing of the data outside of the lock.
+
+`std::unique_lock` works well here as you can manually unlock the lock to do the other work.
+
+```cpp
+void get_and_process_data()
+{
+    std::unique_lock<std::mutex> my_lock(the_mutex); 
+    some_class data_to_process=get_next_data_chunk();
+    my_lock.unlock(); // Unlock mutex after getting data
+    result_type result=process(data_to_process);
+    my_lock.lock(); // Lock mutex when writing result
+    write_result(data_to_process,result);
+}
+```
+
+In general, a lock should be held for only the minimum possible time needed to perform the required operations.
+
+If you don’t hold the required locks for the entire duration of an operation, you’re exposing yourself to race conditions.
+
+## 3.3 Alternative facilities for protecting shared data
+
+One instance is protecting shared data during initialization and then afterwards no syncronization is required (potentially read only operations after). A mutex would be overkill in this instance.
+
+## 3.3.1 Protecting shared data during initialization
+
+Lets say theres an expensive resource that is expensive to construct like a database connection.
+
+One way to intialize with a mutex is by creating a unique_lock and then checking if we need to initialize within the locked segment.
+
+```cpp
+std::shared_ptr<some_resource> resource_ptr;
+std::mutex resource_mutex;
+void foo()
+{
+ std::unique_lock<std::mutex> lk(resource_mutex);
+ if(!resource_ptr)
+ {
+ resource_ptr.reset(new some_resource);
+ }
+ lk.unlock();
+ resource_ptr->do_something();
+}
+```
+
+Another method is double locking where outside of the unique_lock !resource_ptr is checked and within the lock it is checked again.
+
+this can cause race conditions as the read outside the lock isnt synced with the write by another thread in the lock. 
+
+`std::once_flag` and `std::call_once` aim to resolve this as instead of locking a mutex and checking the pointer, each thread can use the call_once, which has lower overhead than a mutex. 
+
+There is a potential race condition with initialization over static variables as multiple threads might all try to initialize instance simutaneously, but this was fixed in C++11 and later.
+
+## 3.3.2 Protecting rarely updated data structures
+
+read-writer mutex, which allows exclusive access by a single writer thread and concurrent access to multiple reader threads.
+
+There isn't one in the STL, but you can use `boost::shared_mutex`
+
+```cpp
+#include <map>
+#include <string>
+#include <mutex>
+#include <boost/thread/shared_mutex.hpp>
+class dns_entry;
+class dns_cache
+{
+    std::map<std::string,dns_entry> entries;
+    mutable boost::shared_mutex entry_mutex;
+
+    public:
+        dns_entry find_entry(std::string const& domain) const
+        {
+            boost::shared_lock<boost::shared_mutex> lk(entry_mutex);
+            std::map<std::string,dns_entry>::const_iterator const it=
+            entries.find(domain);
+            return (it==entries.end())?dns_entry():it->second;
+        }
+        void update_or_add_entry(std::string const& domain, dns_entry const& dns_details)
+        {
+            std::lock_guard<boost::shared_mutex> lk(entry_mutex);
+            entries[domain]=dns_details;
+        }
+};
+```
+
+In this example, find_entry allows for multiple reader threads since boost::shared_lock protects it. However, lock_guard is used for update_or_add_entry, to provide exclusive access while the table is updated.
+
+## 3.3.3 Recursive Locking
+
+`std::recursive_mutex` allows the same thread to lock the mutex multiple times where a normal `std::mutex` cannot be locked twice by the same thread.
+
+However, it is usually bad design choice since it can lead to sloppy thinking and bad design choices as class invariants can be broken when the lock is held.
