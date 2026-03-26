@@ -142,3 +142,96 @@ Listing 4.10 in `connections.cpp`
 
 ## 4.2.4 Saving an exception for the future
 
+With `std::async` and `std::packaged_task`, exceptions are stored inside the future. Calling get() rethrows the exception.
+
+With `std::promise`, either use a try/catch block or `std_exception()`
+
+Another way to store an exception in a future is by destroying the promise or packaged_task associated with the future without invoking them
+
+## 4.2.5 Waiting from multiple threads
+
+Access to member functions of a single future through multiple threads can cause a data race and undefined behavior. Futures are for unique ownership and get() only allows one thread to access the value.
+
+futures are only movable but `std::shared_future` is copyable and allows for multiple objects to refer to the same state.
+
+With `std::shared_future` member functions are still unsynchronized, so you still need a lock to protect the access.
+
+The preferred way is to take a copy of the shared synchronous state and have each thread have its own copy.
+
+One use of `std::shared_future` is if you need to do parallel execution where multiple threads depend on the value of another thread, allowing the tasks that need to be completed first go ahead before executing the rest.
+
+If a shared_future needs to reference an async state from a regular future, since the reg future doesn't share ownership, you will need to move the future into the shared_future leaving the reg future in an empty state.
+
+`std_future` also has a share() function which transfers ownership to a new shared_future
+
+## 4.3 Waiting with a time limit
+
+You can include a time-limit during blocking calls as `std::conditional_variable` has two overloads for each:
+    - `std::wait_for()` 
+    - `std::wait_until()`
+
+Which one overload, just waits until signalled or the timeout expires and the other that checks a supplied predicate and will return when the supplied predicate returns true
+
+## 4.3.1 Clocks
+
+Clock is a source of time information, specifically a class that provides four distinct pieces of info:
+- the time now
+- the type of the value used to represent the times obtained from the clock
+- the tick period of the clock
+- whether or not the clock ticks at a uniform rate and thus considered a steady clock
+
+Tick period is a fractional number of seconds: 25 ticks per sec is a ratio of std::ratio<1,25>
+
+If the clock ticks at a uniform rate (whether rate matches the period) and can't be adjusted, the clock is said to be a steady clock.
+
+## 4.3.2 Durations
+
+Durations are handled by the <chrono> library
+
+Conversions betwen the durations are implicit so converting hours to seconds is oK but not the other way around.
+Use duration_cast<> for explicit conversions.
+
+Durations are also arithmetic and you can obtain the count with .count()
+
+## 4.3.3 Time points 
+
+`std::time_point` represents a specific point in time and is defined as a clock or a duration unit
+
+The time is measured since a clocks epoch, the starting reference point
+
+You can also do arithmetic with time points and these time points are tied to a specific clock, which have their own different epochs and different behaviors.
+
+## 4.3.4 Functions that accept timesouts
+
+One use for a timeout is to add a delay to a processing of a particular thread so it doesn't take processing time away from other threads when it has nothing to do, such as using this_thread::sleep
+
+std::mutex and recursive mutex doesn't support timeouts but timed_mutex does.
+
+
+Chart is on page 114
+
+## 4.4 Using synchronization of operations to simplify code
+
+Its only one paragraph leading to the next segment 
+
+## 4.4.1 Functional programming with futures
+
+Functional programming refers to a style of programming where the result of a function call depends solely on the parameters to that function and doesn't depend on any external state. 
+
+A pure function doesn't modify any external state either and the effects are only limited to the return value.
+
+Benefits regarding concurrency is that there is no shared memory needed since theres no modification to shared data, leading to no race conditions and protecting data with mutexes
+
+Futures benefit FP, as they can be passed around threads allowing the result of one computation to depend on another without any explicit shared data access
+
+## 4.4.2 Synchronizing operations with message passing
+
+CSP - Communicating Sequential Processess means that threads don't share data but instead communicate via messages and each thread can be understood independently
+
+Each thread behaves like a state machine that recieves a message, updates the state, and possibly sends a message
+
+This is important as message apssing reduces race conditions and synchronization bugs while making systems more reasonable to maintain.
+
+In reality C++ threads share an address space so this isn't exactly possible, but instead share the message queue between threads but not any thread specific details.
+
+
