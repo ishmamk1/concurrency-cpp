@@ -105,6 +105,85 @@ class spinlock_mutex
 
 ### 5.2.3 Operations on std::atomic<bool>
 
-On page 112
+Not copy-constructible or copy-assignable, you can construct it from a nonatomic bool, so it can be initially true or false, and you can also assign to instances of
+std::atomic<bool> from a nonatomic bool:
 
+```cpp
+std::atomic<bool> b(true);
+b=false;
+```
+
+Similar to other atomic types, it returns the value and not the reference. If a reference to the atomic variable was returned, then any code depending on the result of the assignment would have to load the value, potentially getting the result of a modification of another thread.
+
+Uses store() for writes and exchange() to allow you to replae the storec value with a new one of your choosing.
+
+This new operation is called compare/exchange, and it comes in the form of the compare_exchange_weak() and compare_exchange_strong() member functions. It is similar to compare_and_swap from OS class.
+
+c_a_e_weak() store might not be successful even if the original value is equal to the expected value, leaving the value unchanged and the return val be false.
+
+It can fail spurriously, reason for failure is due to timing instead of the value of the variables, so the compare & exchange weak should be used in a loop.
+
+```cpp
+bool expected=false;
+extern atomic<bool> b; // set somewhere else
+while(!b.compare_exchange_weak(expected,true) && !expected);
+```
+
+compare_exchange_strong() is guaranteed to return false only if the actual value wasn’t equal to the expected value, so theres no need for a loop.
+
+The compare/exchange functions are also unusual in that they can take two memory ordering parameters. This allows for the memory-ordering semantics to differ in the
+case of success and failure;
+
+`std::atomic<bool>` may not be lock-free so use the is_lock_free() member function to check if it is.
+
+### 5.2.4 Operations on std::atomic<T*>: pointer arithmetic
+
+The atomic form of a pointer to some type T is std::atomic<T*>, just as the atomim form of bool is std::atomic<bool>. 
+
+It’s neither copy-constructible nor copy-assignable, although it can be both constructed and assigned from the suitable pointer values. 
+
+`std::atomic<T*>` also has load(), store(), exchange(), compare_exchange_weak(), and compare_exchange_strong()
+member functions, with similar semantics to those of std::atomic<bool>, again taking and returning T* rather than bool.
+
+The basic operations are provided by the fetch_add() and fetch_sub() member functions, which do atomic addition and subtraction on the stored address,
+and the operators += and -=, and both pre- and post-increment and decrement with ++ and --, which provide convenient wrappers.
+
+if x is std::atomic<Foo*> to the first entry of an array of Foo objects, then x+=3 changes it to point to the fourth entry and returns a plain
+Foo* that also points to that fourth entry
+
+fetch_add() and fetch_sub() are slightly different in that they return the original value (so x.fetch_add(3) will update x to point
+to the fourth value but return a pointer to the first value in the array).
+
+
+`p.fetch_add(3,std::memory_order_release);`
+
+Because both fetch_add() and fetch_sub() are read-modify-write operations, they can have any of the memory-ordering tags and can participate in a release sequence.
+
+### 5.2.5 Operations on standard atomic integral types
+
+In combination to the normal operations to load(), store(), exchange(), etc: atomic integral types such as std::atomic<int> or std::atomic<unsigned long long>
+have:
+- fetch_add(), fetch_sub(), fetch_and(), fetch_or(), fetch_xor()
+- +=, -=, &=, |=, and ^=
+- ++x, x++, --x, and x--
+
+NO DIVISION, MULTIPLICATION, OR SHIFT OPERATORS
+
+### 5.2.6 The std::atomic<> primary class template
+
+In order to use std::atomic<UDT> for some user-defined type UDT, this type must have a trivial copy-assignment operator.
+This means that the type must not have any virtual functions or virtual base classes and must use the compiler-generated copy-assignment operator.
+
+Finally, the type must be bitwise equality comparable. This goes alongside the assignment requirements; not only must you be able to copy an object of type UDT using memcpy(), but you must be able to compare instances for equality using memcmp().
+
+Restrictions exist to avoid:
+- calling user code while holding internal locks
+- deadlocks / slow comparisons
+- exposing protected data
+
+If your UDT is the same size as (or smaller than) an int or a void*, most common platforms will be able to use atomic instructions for std::atomic<UDT>. 
+
+For more complex data, youre better off using a mutex.
+
+### 5.3 Synchronizing operations and enforcing ordering
 
